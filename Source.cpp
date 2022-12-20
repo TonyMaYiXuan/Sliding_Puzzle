@@ -1,12 +1,14 @@
-#include <graphics.h>
-#include <conio.h>
 #include <cstdlib>
 #include <string>
 #include <random>
 #include <algorithm>
 #include <fstream>
-//#include "opencv-4.6.0/modules/core/include/opencv2/core.hpp"
-//#include "opencv-4.6.0/modules/imgproc/include/opencv2/imgproc.hpp"
+#include "Resources\EasyX\include\graphics.h"
+#include <opencv2/opencv.hpp>
+#include <opencv2/core/core.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/highgui/highgui.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
 #pragma comment(lib, "winmm.lib")
 
 class Triangle {
@@ -23,6 +25,7 @@ public:
 };
 
 /** Global variable declarations */
+WCHAR working_path[MAX_PATH];
 long long graph_size /* in pixels */;
 long long shuffle_times;
 Triangle prim_tri /* primitive (original non-splited) triangle */;
@@ -30,6 +33,7 @@ Square prim_sqr /* primitive (original non-splited) square */;
 /** ---------------------------- */
 
 void initialization() {
+    GetCurrentDirectoryW(MAX_PATH, working_path);
     graph_size = 960;
     prim_sqr.begin_x = 60;
     prim_sqr.begin_y = 60;
@@ -245,15 +249,8 @@ namespace trigame {
                     long double dist_sidelines[3];
                     short K = 0, k = 0;
                     do {
-                        bool flag;
-                        /** Calculate whether the center of the pixel is near the side on top of being close to the extended sideline (details omitted) */
                         long long Ax = 2 * (vertices[(k + 2) % 3].first - vertices[(k + 1) % 3].first) * (vertices[(k + 2) % 3].first - vertices[(k + 1) % 3].first) * vertices[(k + 1) % 3].first + (vertices[(k + 2) % 3].second - vertices[(k + 1) % 3].second) * (vertices[(k + 2) % 3].second - vertices[(k + 1) % 3].second) * (2 * j + 1) + (vertices[(k + 2) % 3].second - vertices[(k + 1) % 3].second) * (vertices[(k + 2) % 3].first - vertices[(k + 1) % 3].first) * (2 * vertices[(k + 1) % 3].second - 2 * i - 1), Ay = (vertices[(k + 2) % 3].first - vertices[(k + 1) % 3].first) * (vertices[(k + 2) % 3].first - vertices[(k + 1) % 3].first) * (2 * i + 1) + 2 * (vertices[(k + 2) % 3].second - vertices[(k + 1) % 3].second) * (vertices[(k + 2) % 3].second - vertices[(k + 1) % 3].second) * vertices[(k + 1) % 3].second + (vertices[(k + 2) % 3].second - vertices[(k + 1) % 3].second) * (vertices[(k + 2) % 3].first - vertices[(k + 1) % 3].first) * (2 * vertices[(k + 1) % 3].first - 2 * j - 1), Bx = 2 * (vertices[(k + 2) % 3].first - vertices[(k + 1) % 3].first) * (vertices[(k + 2) % 3].first - vertices[(k + 1) % 3].first) * vertices[(k + 2) % 3].first + (vertices[(k + 2) % 3].second - vertices[(k + 1) % 3].second) * (vertices[(k + 2) % 3].second - vertices[(k + 1) % 3].second) * (2 * j + 1) + (vertices[(k + 2) % 3].second - vertices[(k + 1) % 3].second) * (vertices[(k + 2) % 3].first - vertices[(k + 1) % 3].first) * (2 * vertices[(k + 2) % 3].second - 2 * i - 1), By = (vertices[(k + 2) % 3].first - vertices[(k + 1) % 3].first) * (vertices[(k + 2) % 3].first - vertices[(k + 1) % 3].first) * (2 * i + 1) + 2 * (vertices[(k + 2) % 3].second - vertices[(k + 1) % 3].second) * (vertices[(k + 2) % 3].second - vertices[(k + 1) % 3].second) * vertices[(k + 2) % 3].second + (vertices[(k + 2) % 3].second - vertices[(k + 1) % 3].second) * (vertices[(k + 2) % 3].first - vertices[(k + 1) % 3].first) * (2 * vertices[(k + 2) % 3].first - 2 * j - 1), delta = (vertices[(k + 2) % 3].first - vertices[(k + 1) % 3].first) * (vertices[(k + 2) % 3].first - vertices[(k + 1) % 3].first) + (vertices[(k + 2) % 3].second - vertices[(k + 1) % 3].second) * (vertices[(k + 2) % 3].second - vertices[(k + 1) % 3].second);
-                        if (Ax == Bx)
-                            flag = (Ay <= delta * (2 * i + 1) && delta * (2 * i + 1) <= By) || (Ay >= delta * (2 * i + 1) && delta * (2 * i + 1) >= By);
-                        else
-                            flag = (Ax <= delta * (2 * j + 1) && delta * (2 * j + 1) <= Bx) || (Ax >= delta * (2 * j + 1) && delta * (2 * j + 1) >= Bx);
-                        /** --------------------------------------------------------------------------------------------------------------------------- */
-                        if (flag)
+                        if ((delta * (2 * i + 1) - Ay) * (delta * (2 * i + 1) - By) <= 0 && (delta * (2 * j + 1) - Ax) * (delta * (2 * j + 1) - Bx) <= 0 /* the center of the pixel is close to the side of the triangle besides being close to the extended sideline */)
                             dist_sidelines[K++] = abs((vertices[(k + 2) % 3].second - vertices[(k + 1) % 3].second) * (j + 0.5L) - (vertices[(k + 2) % 3].first - vertices[(k + 1) % 3].first) * (i + 0.5L) + (vertices[(k + 2) % 3].first * vertices[(k + 1) % 3].second - vertices[(k + 1) % 3].first * vertices[(k + 2) % 3].second)) / sqrtl((vertices[(k + 2) % 3].first - vertices[(k + 1) % 3].first) * (vertices[(k + 2) % 3].first - vertices[(k + 1) % 3].first) + (vertices[(k + 2) % 3].second - vertices[(k + 1) % 3].second) * (vertices[(k + 2) % 3].second - vertices[(k + 1) % 3].second)) /* make sure it is floating point division */;
                     } while (++k != 3);
                     if (K && *std::min_element(dist_sidelines, dist_sidelines + K) < line_radius)
@@ -419,7 +416,7 @@ void game(short mode, long long N /* positive integer, meaningless practically i
                     empty = target;
                     //TODO Sound effects
                     trigame::fill_block(pMem, triangle_list, pixel_status, N, N - 1, empty, trigame::LEAVE_EMPTY);
-                    if (need_draw_border)
+                    if (need_draw_border || triangle_list[N - 1][empty].boundary > 0)
                         trigame::draw_outer_border(pMem, N, 2);
                 }
             }
@@ -433,16 +430,34 @@ void game(short mode, long long N /* positive integer, meaningless practically i
     }
 }
 
+std::wstring full_path(const wchar_t* relative_path) {
+    std::wstring wstrpath(working_path);
+    wstrpath += relative_path;
+    return wstrpath;
+}
+
+std::string full_path(const char* relative_path) {
+    std::wstring wstrpath(working_path);
+    std::string strpath(wstrpath.begin(), wstrpath.end());
+    strpath += relative_path;
+    return strpath;
+}
+
 int main() {
     initialization();
-    WCHAR path[MAX_PATH];
-    GetCurrentDirectoryW(MAX_PATH, path);
-    std::wstring wstrpath(path);
-    wstrpath += L"\\Files\\BGM_Nova_Ahrix.wav";
-    PlaySoundW(wstrpath.c_str(), NULL, SND_ASYNC | SND_LOOP); //only runs after game ends //TODO need to avoid absolute path but this function needs absolute path? see Lv Xinyao's project
+    cv::Mat image = cv::imread(full_path("\\Files\\Images\\Qiuzhen\\0.jpg").c_str(), cv::IMREAD_UNCHANGED);
+    cv::blur(image, image, cv::Size(20, 20));
+    if (!image.empty() /* successfully loaded */) {
+        cv::imwrite(full_path("\\Files\\Images\\Temporary\\0.jpg").c_str(), image);
+        cv::namedWindow("Image", cv::WINDOW_NORMAL);
+        imshow("Image", image);
+    }
+    cv::waitKey(0); //1 is also ok, if no this line then imgae is not shown
+    
+    PlaySoundW(full_path(L"\\Files\\BGM_Nova_Ahrix.wav").c_str(), NULL, SND_ASYNC | SND_LOOP); //only runs after game ends //TODO need to avoid absolute path but this function needs absolute path? see Lv Xinyao's project
     game(TRIANGLE_MODE, 4);
     // TRIANGLE_MODE 1 means 1 layer
-    _getch(); //TODO Put elsewhere
-    closegraph(); //TODO Put elsewhere
+    getchar(); //TODO Put elsewhere
+    //closegraph(); //TODO Put elsewhere
     return 0;
 }

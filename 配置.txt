@@ -1,0 +1,8 @@
+Visual Studio 2022 (v143)
+VisualStudioVersion = 17.2.32602.215
+EasyX 20220901
+OpenCV-v4.6.0
+Windows SDK Version 10.0
+C++ Language Standard: ISO C++14 Standard
+Character Set: Use Unicode Character Set
+Release|x64

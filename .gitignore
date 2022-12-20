@@ -28,4 +28,5 @@
 
 # Customized
 *.vs
-*opencv*
+Resources*
+Release_x64*
