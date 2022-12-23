@@ -1,3 +1,5 @@
+#define DEBUG
+
 #include <cstdlib>
 #include <string>
 #include <random>
@@ -13,7 +15,9 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #pragma comment(lib, "winmm.lib")
 
+#ifdef DEBUG
 #include <iostream>
+#endif
 
 /** Global variable declarations and initializations */
 WCHAR working_path[MAX_PATH];
@@ -23,8 +27,6 @@ short current_bgm;
 #define GRAPH_SIZE 1000 /* (in pixels) avoid changing it */
 #define SHUFFLE_TIMES 70000 /* for TRIANGLE_MODE, use a number close to the square of the number of blocks */
 /** -----------------------------------------------  */
-
-#define DEBUG
 
 /** Mode and page definitions */
 /*                        x      */
@@ -944,6 +946,7 @@ int main() {
                                 text_height = 30;
                             } //TODO More testing
                             setbkmode(OPAQUE);
+                            setbkcolor(WHITE);
                             settextstyle(text_height, 0, L"Consolas", 0, 0, 400, false, false, false);
                             long long tmp_x = empty_block_begin_x + this_game->prim_sqr.size / this_game->get_N() / 2, tmp_y = empty_block_begin_y + this_game->prim_sqr.size / this_game->get_N() / 2;
                             outtextxy(tmp_x - custom::consolas_width(text_height) / 2, tmp_y - text_height / 2, std::to_wstring(countdown_before_resume - time_elapsed_since_resume_request /* a single digit */).c_str());
@@ -1094,6 +1097,7 @@ int main() {
                             default:
                                 text_height = 30;
                             } //TODO More testing
+                            setbkcolor(WHITE);
                             settextstyle(text_height, 0, L"Consolas", 0, 0, 400, false, false, false);
                             long long tmp_x = empty_block_begin_x + this_game->prim_sqr.size / this_game->get_N() / 2, tmp_y = empty_block_begin_y + this_game->prim_sqr.size / this_game->get_N() / 2;
                             outtextxy(tmp_x - custom::consolas_width(text_height) / 2, tmp_y - text_height / 2, std::to_wstring(countdown_before_pause - time_elapsed_since_pause_request /* a single digit */).c_str());
@@ -1203,14 +1207,6 @@ int main() {
     }
     //TODO EndBatchDraw();
     closegraph();
-
-    //
-    ///** The vertices of the primitive triangle (made close to an equilateral triangle) */
-    //prim_tri.vertices[0] = std::pair<long long, long long>(200, 480 - 360);
-    //prim_tri.vertices[1] = std::pair<long long, long long>(200, 480 + 360);
-    //prim_tri.vertices[2] = std::pair<long long, long long>(824, 480);
-    ///** ------------------------------------------------------------------------------ */
-
 
     //cv::Mat image = cv::imread("Files\\Images\\Puzzle_Qiuzhen\\0.jpg", cv::IMREAD_UNCHANGED);
     //cv::blur(image, image, cv::Size(20, 20));
