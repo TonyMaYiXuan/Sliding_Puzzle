@@ -50,7 +50,6 @@ short current_bgm;
 #define RESULT_PAGE     0b000010
 #define RANK_PAGE       0b000011
 
-#define EXIT_CODE       -1
 //TODO #define SETTINGS_PAGE   0b000001
 /** ------------------------ */
 
@@ -743,9 +742,9 @@ int main() {
     /** Game */ {
         Game* this_game = nullptr /* an initialization is required, otherwise results in fatal error LNK1257 */;
         page = START_PAGE;
-        while (page != EXIT_CODE) {
+        while (true) {
             flushmessage();
-            //std::cout << ((page & 0b1000) >> 3) << ((page & 0b100) >> 2) << ((page & 0b10) >> 1) << (page & 0b1);
+            /* it is necessary to deal with START_PAGE and EXIT_PAGE cases first  */
             if (page == START_PAGE) {
 #ifdef DEBUG
                 std::cout << "page is START_PAGE now.\n";
@@ -753,9 +752,9 @@ int main() {
                 Hue hue_play_small = { { 64, 64, 0 }, { 0, 1280, 0 }, { 1280, 0, 0 } } /* the size of the small square is GRAPH_SIZE / 10 */;
                 Game small_square_game(SQUARE_MODE, 2);
                 small_square_game.set_prim_sqr(GRAPH_SIZE / 5, GRAPH_SIZE / 5, GRAPH_SIZE / 10);
+                small_square_game.set_sqr(true);
                 /** Shuffle the small game so that one move is required to solve it */
                 do {
-                    small_square_game.set_sqr(true);
                     small_square_game.shuffle(1);
                 } while (small_square_game.check_solved());
                 /** --------------------------------------------------------------- */
@@ -879,7 +878,52 @@ int main() {
                 }
                 continue;
             }
-            else /* remember this "else" */ if ((page & SQR_TRI_FILTER) == SQUARE_MODE && (page & HUE_IMG_FILTER) == HUE_MODE && (page & PAGE_TYPE) == PAUSED_PAGE) {
+            else if (page == EXIT_PAGE) {
+#ifdef DEBUG
+                std::cout << "page is EXIT_PAGE now.\n";
+#endif
+                Hue hue_play_small = { { 64, 64, 0 }, { 0, 1280, 0 }, { 1280, 0, 0 } } /* the size of the small square is GRAPH_SIZE / 10 */;
+                std::chrono::milliseconds flash_period(current_bgm ? 255 : 170 /* a BGM specific value figured out by rough testing */), till_exit(1000);
+                std::chrono::steady_clock::time_point begin_time = std::chrono::steady_clock::now(), last_time = begin_time;
+                bool hue_sky_up_down = false, bg_refresh = true;
+                while (true) {
+                    std::chrono::steady_clock::time_point time_this_loop = std::chrono::steady_clock::now();
+                    if (std::chrono::duration_cast<std::chrono::milliseconds>(time_this_loop - begin_time) >= till_exit) {
+                        break;
+                    }
+                    if (bg_refresh) {
+                        /** One refresh cycle */
+                        hue_sky.top_left_RGB[0] = hue_sky_up_down ? 127 : 80;
+                        hue_sky.top_left_RGB[1] = hue_sky_up_down ? 223 : 192;
+                        hue_sky.total_change_i[0] = hue_sky_up_down ? -48 : 48;
+                        hue_sky.total_change_i[1] = hue_sky_up_down ? -32 : 32;
+                        for (int i = 0; i != GRAPH_SIZE; ++i)
+                            for (int j = 0; j != GRAPH_SIZE; ++j)
+                                graph_buffer[i * GRAPH_SIZE + j] = color_hue_BGR(i, j, &hue_sky);
+                        for (short i = 0; i != 2; ++i)
+                            putimage(GRAPH_SIZE / 5 * 3, 0, &image_res::background[i], i ? SRCPAINT : SRCAND) /* successful but picture jagged */;
+                        setlinestyle(PS_DASH, 20);
+                        setlinecolor(BLACK);
+                        circle(500, 500, 180);
+                        settextstyle(100, 0, L"·ÂËÎ", 0, 0, 300, false, false, false);
+                        settextcolor(WHITE);
+                        outtextxy(385, 385, L"ÔÙ");
+                        outtextxy(515, 515, L"¼û");
+                        setlinestyle(PS_DASH, 5);
+                        line(385, 500, 614, 500);
+                        line(500, 385, 500, 614);
+                        FlushBatchDraw();
+                        /* ------------------ */
+                        hue_sky_up_down = !hue_sky_up_down, bg_refresh = false;
+                    }
+                    else if (!bg_refresh) {
+                        if (std::chrono::duration_cast<std::chrono::milliseconds>(time_this_loop - last_time) >= flash_period)
+                            last_time = time_this_loop, bg_refresh = true;
+                    }
+                }
+                break /* exit */;
+            }
+            else if ((page & SQR_TRI_FILTER) == SQUARE_MODE && (page & HUE_IMG_FILTER) == HUE_MODE && (page & PAGE_TYPE) == PAUSED_PAGE) {
 #ifdef DEBUG
                 std::cout << "page is SQUARE_MODE | HUE_MODE | PAUSED_PAGE now.\n";
 #endif
@@ -1197,12 +1241,6 @@ int main() {
                 /** ------------------------------------------------- */
                 continue;
             }
-            else if (page == EXIT_PAGE) {
-#ifdef DEBUG
-                std::cout << "page is EXIT_PAGE now.\n";
-#endif
-                page = EXIT_CODE;
-            }
         }
     }
     //TODO EndBatchDraw();
@@ -1224,6 +1262,5 @@ int main() {
     /** ------------------------------------------------------------------------------ */
     //fill_entire_graph(graph_buffer, &hue_play);
     //game(TRIANGLE_MODE, 2, &hue_play);
-    // TRIANGLE_MODE 1 means 1 layer
     return 0;
 }
