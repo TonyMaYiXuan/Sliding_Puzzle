@@ -1,5 +1,4 @@
 #define TESTING /* DO NOT define DEBUG */
-#define MUTED
 
 #include <cstdlib>
 #include <string>
@@ -37,6 +36,7 @@ short current_bgm;
 /*                        x      */
 #define START_PAGE      0b100000
 #define EXIT_PAGE       0b100001
+//TODO #define SETTINGS_PAGE   0b000001
 /*                         x     */
 #define SQR_TRI_FILTER  0b010000 /* bitfilter */
 #define SQUARE_MODE     0b000000
@@ -55,7 +55,8 @@ short current_bgm;
 #define RESULT_PAGE     0b000010
 #define RANK_PAGE       0b000011
 
-//TODO #define SETTINGS_PAGE   0b000001
+#define EXIT_CODE -1
+
 /** ------------------------ */
 
 class Triangle {
@@ -888,14 +889,14 @@ int main() {
     /** Game */ {
         Game* this_game = nullptr /* an initialization is required, otherwise results in fatal error LNK1257 */;
         page = START_PAGE;
-        while (true) {
+        while (page != EXIT_CODE) {
             flushmessage();
             /* it is necessary to deal with START_PAGE and EXIT_PAGE cases first  */
             if (page == START_PAGE) {
 #ifdef TESTING
                 std::cout << "page is START_PAGE now.\n";
 #endif
-                Hue hue_play_small({ 200, 200, 100, 64, 64, 0, 0, 128, 0, 128, 0, 0 }) /* the size of the small square is SMALL_GRAPH_SIZE */;
+                Hue hue_play_small({ 200, 200, 100, 64, 64, 0, 0, 128, 0, 128, 0, 0 }) /* the size of the small square is SMALL_GRAPH_SIZE */; //TODO This range of hue not the same as game, not compatible with the image case either
                 IMAGE image_play_tmp, image_play_small;
                 const std::string image_relative_path = "Files\\Images\\Puzzle_Qiuzhen\\0.jpg"; //TODO More options for image
                 if (!get_image_with_background_blurred(&image_play_small, image_relative_path, 80, 80, GRAPH_SIZE, 840, 100) || !get_image_with_background_blurred(&image_play_tmp, image_relative_path, 8, 8, SMALL_GRAPH_SIZE, 84, 100)) { //TODO Think about blur_factor
@@ -905,7 +906,6 @@ int main() {
                 for (long long i = 0; i != SMALL_GRAPH_SIZE; ++i)
                     for (long long j = 0; j != SMALL_GRAPH_SIZE; ++j)
                         image_play_small_buffer[(i + 500) * GRAPH_SIZE + (j + 100)] = image_play_tmp_buffer[i * SMALL_GRAPH_SIZE + j]; //TODO Fix it, it seems that (i + 492) * GRAPH_SIZE + (j + 92) is more convincing
-                saveimage(L"Files\\Images\\test.png", &image_play_tmp);
                 const ImageHuePointer imagehuepointer_play_small_hue({ 1, nullptr, &hue_play_small }), imagehuepointer_play_small_image({ 0, &image_play_small, nullptr });
                 Game small_square_game_0(SQUARE_MODE | HUE_MODE, 0 /* //TODO */, 2), small_square_game_1(SQUARE_MODE | IMAGE_MODE, 0 /* //TODO */, 2); //TODO generalize
                 small_square_game_0.set_prim_sqr(200, 200, 100) /* the hue small game has top left corner at (x, y) = (200, 200) */;
@@ -1020,8 +1020,12 @@ int main() {
                         if (std::chrono::duration_cast<std::chrono::milliseconds>(time_this_loop - last_time) >= flash_period)
                             last_time = time_this_loop, bg_refresh = true;
                     }
-                    bool peeked = peekmessage(&msg, EX_MOUSE);
+                    bool peeked = peekmessage(&msg, EX_MOUSE | EX_KEY);
                     if (peeked) {
+                        if (msg.message == WM_KEYUP /* suppose the keyup after keydown is successfully detected */ && msg.vkcode == VK_ESCAPE) {
+                            page = EXIT_PAGE;
+                            break;
+                        }
                         if (!prepare_exit && square::move_if_asked(&small_square_game_0, msg, imagehuepointer_play_small_hue, 2)) {
                             if (small_square_game_0.check_solved()) {
                                 refresh_after_winned = true /* after small game solved */, which_small_game_winned = 0, bg_refresh = true /* refresh immediately within the next loop */;
@@ -1054,11 +1058,11 @@ int main() {
                             }
                             continue;
                         }
-                        if (!prepare_exit && custom::is_in_rect(&msg, 23, 24, 27, 32)) {
+                        if (!prepare_exit && msg.message == WM_MOUSEMOVE && custom::is_in_rect(&msg, 23, 24, 27, 32)) {
                             prepare_exit = true, exit_request_time = time_this_loop, bg_refresh = true /* refresh immediately within the next loop */;
                             continue;
                         }
-                        if (prepare_exit && !custom::is_in_rect(&msg, 23, 24, 27, 32)) {
+                        if (prepare_exit && msg.message == WM_MOUSEMOVE && !custom::is_in_rect(&msg, 23, 24, 27, 32)) {
                             prepare_exit = false, bg_refresh = true /* refresh immediately within the next loop */;
                             continue;
                         }
@@ -1081,6 +1085,7 @@ int main() {
                 while (true) {
                     std::chrono::steady_clock::time_point time_this_loop = std::chrono::steady_clock::now();
                     if (std::chrono::duration_cast<std::chrono::milliseconds>(time_this_loop - begin_time) >= till_exit) {
+                        page = EXIT_CODE;
                         break;
                     }
                     if (bg_refresh) {
@@ -1107,8 +1112,19 @@ int main() {
                         if (std::chrono::duration_cast<std::chrono::milliseconds>(time_this_loop - last_time) >= flash_period)
                             last_time = time_this_loop, bg_refresh = true;
                     }
+                    bool peeked = peekmessage(&msg, EX_KEY);
+                    if (peeked) {
+                        if (msg.message == WM_KEYUP /* suppose the keyup after keydown is successfully detected */ && msg.vkcode == VK_ESCAPE /* quitting in a shorter time */) {
+                            page = EXIT_CODE;
+                            break;
+                        }
+                        if (msg.message == WM_KEYUP /* suppose the keyup after keydown is successfully detected */ && msg.vkcode == VK_BACK /* undo quitting */) {
+                            page = START_PAGE;
+                            break;
+                        }
+                    }
                 }
-                break /* exit */;
+                continue;
             }
             else if ((page & SQR_TRI_FILTER) == SQUARE_MODE && (page & PAGE_TYPE) == PAUSED_PAGE) {
 #ifdef TESTING
@@ -1247,15 +1263,15 @@ int main() {
                         if (msg.message == WM_KEYUP /* suppose the keyup after keydown is successfully detected */ && msg.vkcode == VK_ESCAPE) {
                             page = EXIT_PAGE;
                             break;
-                        } //TODO Escape in almost all pages; documentate
+                        }
                         if (msg.message == WM_MOUSEMOVE /* I believe this suffices */)
                             ignore_mouse_hover_on_resume = ignore_mouse_hover_on_resume && custom::is_in_circ(&msg, 110, 38, 21) /* it is ok to continue the flow using msg possibly again */;
                         if (prepare_resume) {
-                            if (msg.message == WM_KEYUP && msg.vkcode == VK_BACK || msg.message == WM_LBUTTONUP && custom::is_in_circ(&msg, 110, 38, 21)) {
+                            if (msg.message == WM_LBUTTONUP && custom::is_in_circ(&msg, 110, 38, 21)) {
                                 page = SQUARE_MODE | (page & HUE_IMG_FILTER) | RESUMED | GAME_PAGE;
                                 break;
                             }
-                            if (!custom::is_in_circ(&msg, 110, 38, 21)) {
+                            if (msg.message == WM_MOUSEMOVE && !custom::is_in_circ(&msg, 110, 38, 21)) {
                                 prepare_resume = false;
                                 continue;
                             }
@@ -1265,15 +1281,19 @@ int main() {
                                 page = START_PAGE;
                                 break;
                             }
-                            if (!custom::is_in_rect(&msg, 23, 24, 27, 32)) {
+                            if (msg.message == WM_MOUSEMOVE && !custom::is_in_rect(&msg, 23, 24, 27, 32)) {
                                 prepare_exit = false;
                                 continue;
                             }
                         }
                         else {
+                            if (msg.message == WM_KEYUP && msg.vkcode == VK_BACK) {
+                                page = SQUARE_MODE | (page & HUE_IMG_FILTER) | RESUMED | GAME_PAGE;
+                                break;
+                            }
                             if (!square::move_if_asked(&new_tmp_game, msg, imagehuepointer_play_medium_shifted, 3)) {
-                                prepare_exit = custom::is_in_rect(&msg, 23, 24, 27, 32);
-                                prepare_resume = !prepare_exit && !ignore_mouse_hover_on_resume && (msg.message == WM_KEYDOWN && msg.vkcode == VK_SPACE || custom::is_in_circ(&msg, 110, 38, 21));
+                                prepare_exit = msg.message == WM_MOUSEMOVE && custom::is_in_rect(&msg, 23, 24, 27, 32);
+                                prepare_resume = !prepare_exit && !ignore_mouse_hover_on_resume && msg.message == WM_MOUSEMOVE && custom::is_in_circ(&msg, 110, 38, 21);
                                 if (prepare_exit)
                                     exit_request_time = time_this_loop, bg_refresh = true /* refresh immediately within the next loop */;
                                 if (prepare_resume)
@@ -1311,7 +1331,7 @@ int main() {
                 square::fill_region(imagehuepointer_play, 0, 0, GRAPH_SIZE, GRAPH_SIZE, 0, 0);
                 if (!(page & RESUMED)) {
                     /** Initialize a game */
-                    Game game(SQUARE_MODE | (page & HUE_IMG_FILTER), 0 /* //TODO */, 3) /* this should not be cleared as long as main() is not returned, so a pointer to it is valid */; //TODO Setting change this constant, no larger than 9
+                    Game game(SQUARE_MODE | (page & HUE_IMG_FILTER), 0 /* //TODO */, 2) /* this should not be cleared as long as main() is not returned, so a pointer to it is valid */; //TODO Setting change this constant, no larger than 9
                     game.set_prim_sqr(80, 80, 840 /* will be modified by the program to be a multiple of N */) /* {80, 80, 840} is also used above when loading image */;
                     game.set_sqr(true);
                     /** Shuffle the small game so that at least one move is required to solve it */
@@ -1423,18 +1443,18 @@ int main() {
                     }
                     bool peeked = peekmessage(&msg, EX_MOUSE | EX_KEY);
                     if (peeked) {
-                        if (msg.message == WM_KEYUP /* suppose the keyup after keydown is successfully detected */ && (msg.vkcode == VK_BACK || msg.vkcode == VK_ESCAPE)) {
+                        if (msg.message == WM_KEYUP /* suppose the keyup after keydown is successfully detected */ && msg.vkcode == VK_ESCAPE) {
                             page = EXIT_PAGE;
                             break;
                         }
                         if (msg.message == WM_MOUSEMOVE /* I believe this suffices */)
                             ignore_mouse_hover_on_pause = ignore_mouse_hover_on_pause && custom::is_in_circ(&msg, 110, 38, 21) /* it is ok to continue the flow using msg possibly again */;
                         if (prepare_pause) {
-                            if (msg.message == WM_KEYUP && msg.vkcode == VK_SPACE || msg.message == WM_LBUTTONUP && custom::is_in_circ(&msg, 110, 38, 21)) {
+                            if (msg.message == WM_LBUTTONUP && custom::is_in_circ(&msg, 110, 38, 21)) {
                                 page = SQUARE_MODE | (page & HUE_IMG_FILTER) | PAUSED_PAGE;
                                 break;
                             }
-                            if (!custom::is_in_circ(&msg, 110, 38, 21)) {
+                            if (msg.message == WM_MOUSEMOVE && !custom::is_in_circ(&msg, 110, 38, 21)) {
                                 /** Resume the game */
                                 square::fill_block(this_game, imagehuepointer_play, this_game->get_empty() / this_game->get_N(), this_game->get_empty() % this_game->get_N(), true);
                                 square::draw_outer_border(this_game, 3, false);
@@ -1448,7 +1468,7 @@ int main() {
                                 page = START_PAGE;
                                 break;
                             }
-                            if (!custom::is_in_rect(&msg, 23, 24, 27, 32)) {
+                            if (msg.message == WM_MOUSEMOVE && !custom::is_in_rect(&msg, 23, 24, 27, 32)) {
                                 /** Resume the game */
                                 square::fill_block(this_game, imagehuepointer_play, this_game->get_empty() / this_game->get_N(), this_game->get_empty() % this_game->get_N(), true);
                                 square::draw_outer_border(this_game, 3, false);
@@ -1458,9 +1478,17 @@ int main() {
                             }
                         }
                         else {
+                            if (msg.message == WM_KEYUP && msg.vkcode == VK_BACK) {
+                                page = START_PAGE;
+                                break;
+                            }
+                            if (msg.message == WM_KEYUP && msg.vkcode == VK_SPACE) {
+                                page = SQUARE_MODE | (page & HUE_IMG_FILTER) | PAUSED_PAGE;
+                                break;
+                            }
                             if (!square::move_if_asked(this_game, msg, imagehuepointer_play, 3)) {
-                                prepare_exit = custom::is_in_rect(&msg, 23, 24, 27, 32);
-                                prepare_pause = !prepare_exit && !ignore_mouse_hover_on_pause && (msg.message == WM_KEYDOWN && msg.vkcode == VK_SPACE || custom::is_in_circ(&msg, 110, 38, 21));
+                                prepare_exit = msg.message == WM_MOUSEMOVE && custom::is_in_rect(&msg, 23, 24, 27, 32);
+                                prepare_pause = !prepare_exit && !ignore_mouse_hover_on_pause && msg.message == WM_MOUSEMOVE && custom::is_in_circ(&msg, 110, 38, 21);
                                 if (prepare_exit || prepare_pause) {
                                     this_game->increment_timer(std::chrono::duration_cast<std::chrono::milliseconds>(time_this_loop - game_begin_time));
                                 }
@@ -1556,13 +1584,17 @@ int main() {
                         if (std::chrono::duration_cast<std::chrono::milliseconds>(time_this_loop - last_time) >= flash_period)
                             last_time = time_this_loop, bg_refresh = true;
                     }
-                    bool peeked = peekmessage(&msg, EX_MOUSE);
+                    bool peeked = peekmessage(&msg, EX_MOUSE | EX_KEY);
                     if (peeked) {
-                        if (!prepare_exit && custom::is_in_rect(&msg, 23, 24, 27, 32)) {
+                        if (msg.message == WM_KEYUP /* suppose the keyup after keydown is successfully detected */ && msg.vkcode == VK_ESCAPE) {
+                            page = EXIT_PAGE;
+                            break;
+                        }
+                        if (!prepare_exit && msg.message == WM_MOUSEMOVE && custom::is_in_rect(&msg, 23, 24, 27, 32)) {
                             prepare_exit = true, exit_request_time = time_this_loop, bg_refresh = true /* refresh immediately within the next loop */; //TODO Other blocks sometimes also need to refresh immediately
                             continue;
                         }
-                        if (prepare_exit && !custom::is_in_rect(&msg, 23, 24, 27, 32)) {
+                        if (prepare_exit && msg.message == WM_MOUSEMOVE && !custom::is_in_rect(&msg, 23, 24, 27, 32)) {
                             prepare_exit = false, bg_refresh = true /* refresh immediately within the next loop */;
                             continue;
                         }
@@ -1708,14 +1740,17 @@ int main() {
                         if (std::chrono::duration_cast<std::chrono::milliseconds>(time_this_loop - last_time) >= flash_period)
                             last_time = time_this_loop, bg_refresh = true;
                     }
-                    bool peeked = peekmessage(&msg, EX_MOUSE);
+                    bool peeked = peekmessage(&msg, EX_MOUSE | EX_KEY);
                     if (peeked) {
-                        std::cout << msg.x << ' ' << msg.y << std::endl;
-                        if (!prepare_exit && custom::is_in_rect(&msg, 23, 24, 27, 32)) {
+                        if (msg.message == WM_KEYUP /* suppose the keyup after keydown is successfully detected */ && msg.vkcode == VK_ESCAPE) {
+                            page = EXIT_PAGE;
+                            break;
+                        }
+                        if (!prepare_exit && msg.message == WM_MOUSEMOVE && custom::is_in_rect(&msg, 23, 24, 27, 32)) {
                             prepare_exit = true, exit_request_time = time_this_loop, bg_refresh = true /* refresh immediately within the next loop */; //TODO Other blocks sometimes also need to refresh immediately
                             continue;
                         }
-                        if (prepare_exit && !custom::is_in_rect(&msg, 23, 24, 27, 32)) {
+                        if (prepare_exit && msg.message == WM_MOUSEMOVE && !custom::is_in_rect(&msg, 23, 24, 27, 32)) {
                             prepare_exit = false, bg_refresh = true /* refresh immediately within the next loop */;
                             continue;
                         }
@@ -1741,7 +1776,13 @@ int main() {
     EndBatchDraw();
     closegraph();
 
-
+// TESTING
+//    const ImageHuePointer imagehuepointer_play({ 1, nullptr, &hue_play });
+//    square::fill_region(imagehuepointer_play, 0, 0, GRAPH_SIZE, GRAPH_SIZE, 0, 0);
+//    Game triangle_game(TRIANGLE_MODE | HUE_MODE, 0, 5);
+//    triangle_game.prim_tri.vertices[0] = std::pair<long long, long long>(200, 480 - 360);
+//    triangle_game.prim_tri.vertices[1] = std::pair<long long, long long>(200, 480 + 360);
+//    triangle_game.prim_tri.vertices[2] = std::pair<long long, long long>(824, 480);
 
     /** The vertices of the primitive triangle (made close to an equilateral triangle) */
     /*prim_tri.vertices[0] = std::pair<long long, long long>(200, 480 - 360);
