@@ -1,4 +1,4 @@
-#define DEBUG
+#define TESTING /* DO NOT define DEBUG */
 #define MUTED
 
 #include <cstdlib>
@@ -6,6 +6,7 @@
 #include <random>
 #include <algorithm>
 #include <fstream>
+#include <sstream>
 #include <chrono>
 #include <thread>
 #include "Resources\EasyX\include\graphics.h"
@@ -16,13 +17,15 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #pragma comment(lib, "winmm.lib")
 
-#ifdef DEBUG
+#ifdef TESTING
 #include <iostream>
 #endif
 
 /** Global variable declarations and initializations */
-#define GRAPH_SIZE 1000 /* (in pixels) DO NOT CHANGE THIS VALUE */
+#define GRAPH_SIZE 1000 /* (in pixels) DO NOT CHANGE THIS VALUE (the use of this macro is simply to enhance readability) */
+#define SMALL_GRAPH_SIZE 400 /* (in pixels) DO NOT CHANGE THIS VALUE (the use of this macro is simply to enhance readability) */
 #define SHUFFLE_TIMES 70000 /* for TRIANGLE_MODE, use a number close to the square of the number of blocks */
+#define RANK_DISPLAY_MAX 7 /* DO NOT CHANGE THIS VALUE (the rank table is not compatible with other values yet) */
 WCHAR working_path[MAX_PATH];
 DWORD* graph_buffer /* display buffer of the graph */;
 long long page;
@@ -163,8 +166,8 @@ inline const int hue_BGR(const Hue* hue, const long long i, const long long j) {
 
 class Game {
 private:
-    short mode;
-    long long N, empty_block, original_empty_block, game_move;
+    short mode, option[2] /* option[0] means "which image" and option[1] means "which hue" */; //TODO More options for hue
+    long long N, empty_block, original_empty_block, step_cnt;
     std::chrono::milliseconds game_time;
     std::chrono::seconds game_time_limit /* to be assigned with a positive value */;
 public:
@@ -173,36 +176,37 @@ public:
     Square* square_list /* array to be dynamically created */;
     Triangle** triangle_list /* array of arrays to be dynamically created */;
     long long* pixel_status /* useful in TRIANGLE_MODE */;
-    Game(short mode, long long N /* positive integer */) {
+    Game(short mode, long long option, long long N /* positive integer */) {
         /** Initialize the game enviornment except that the size of prim_sqr or prim_tri is not given */
         if (N <= 0)
             throw std::runtime_error("N should be positive.");
         Game::N = N;
-        Game::game_time_limit = std::chrono::seconds(0);
+        Game::game_time_limit = std::chrono::seconds(0) /* time limit is not set yet */;
         Game::mode = mode;
-        if (mode == TRIANGLE_MODE) {
+        if ((mode & SQR_TRI_FILTER) == TRIANGLE_MODE) {
             Game::triangle_list = new Triangle * [N];
             for (long long i = 0; i != N; ++i)
                 Game::triangle_list[i] = new Triangle[custom::raise_to_power(4, i)];
             **Game::triangle_list = Game::prim_tri;
             pixel_status = new long long[GRAPH_SIZE * GRAPH_SIZE];
         }
-        else if (Game::mode == SQUARE_MODE) {
+        else {
             Game::square_list = new Square[N * N];
         }
-        else {
-            throw std::runtime_error("Not supported.");
-        }
+        Game::option[(mode & HUE_IMG_FILTER) == HUE_MODE] = option;
         /** ----------------------------------------------------------------------------------------- */
     }
     short get_mode() {
         return Game::mode;
     }
+    short get_option() {
+        return Game::option[(Game::mode & HUE_IMG_FILTER) == HUE_MODE];
+    }
     long long get_N() {
         return Game::N;
     }
     long long get_empty(bool original = false) {
-        return original? Game::original_empty_block: Game::empty_block;
+        return original ? Game::original_empty_block : Game::empty_block;
     }
     std::chrono::milliseconds get_timer() {
         return Game::game_time;
@@ -226,13 +230,13 @@ public:
         Game::game_time_limit = t;
     }
     long long get_cnt() {
-        return Game::game_move;
+        return Game::step_cnt;
     }
     void reset_cnt() {
-        Game::game_move = 0;
+        Game::step_cnt = 0;
     }
     void increment_cnt() {
-        Game::game_move++;
+        Game::step_cnt++;
     }
     void set_prim_sqr(long long begin_x, long long begin_y, long long size) {
         Game::prim_sqr.begin_x = begin_x, Game::prim_sqr.begin_y = begin_y;
@@ -304,18 +308,21 @@ public:
     }
     bool check_solved() {
         bool winned = true;
-        if (Game::mode == TRIANGLE_MODE) {
+        if ((Game::mode & SQR_TRI_FILTER) == TRIANGLE_MODE) {
             for (long long i = 0; winned && i != custom::raise_to_power(4, Game::N - 1); ++i)
                 winned = winned && Game::triangle_list[Game::N - 1][i].target == i;
         }
-        else if (Game::mode == SQUARE_MODE)
+        else
             for (long long i = 0; winned && i != Game::N * Game::N; ++i)
                 winned = winned && Game::square_list[i].target == i;
         return winned;
     }
     void move(long long delta_i, long long delta_j) {
-        //TODO if (Game::mode == TRIANGLE_MODE) {
-        Game::empty_block += delta_i * Game::N + delta_j;
+        if ((Game::mode & SQR_TRI_FILTER) == TRIANGLE_MODE) {
+            //TODO Implement
+        }
+        else
+            Game::empty_block += delta_i * Game::N + delta_j;
     }
     void set_original_empty_block(long long empty) {
         Game::original_empty_block = empty;
@@ -323,7 +330,7 @@ public:
     void shuffle(long long shuffle_times, bool random_assign_original_empty_block = true) /* call this function after initialization */ {
         if (!Game::check_solved())
             throw std::runtime_error("Not initialized.");
-        if (Game::mode == TRIANGLE_MODE) {
+        if ((Game::mode & SQR_TRI_FILTER) == TRIANGLE_MODE) {
             if (random_assign_original_empty_block)
                 Game::original_empty_block = custom::rand(custom::raise_to_power(4, Game::N - 1));
             Game::empty_block = Game::original_empty_block;
@@ -341,7 +348,7 @@ public:
                 }
             }
         }
-        else if (Game::mode == SQUARE_MODE) {
+        else {
             if (random_assign_original_empty_block)
                 Game::original_empty_block = custom::rand(Game::N * Game::N);
             Game::empty_block = Game::original_empty_block;
@@ -369,6 +376,68 @@ public:
     }
 };
 
+class Result {
+private:
+    short mode, option[2] /* option[0] means "which image" and option[1] means "which hue" */;
+    long long N, time_ms, step_cnt;
+public:
+    Result() /* default constructor */ {
+
+    }
+    Result(Game* game) {
+        Result::N = game->get_N();
+        Result::mode = game->get_mode();
+        Result::option[(Result::mode & HUE_IMG_FILTER) == HUE_MODE] = game->get_option();
+        Result::time_ms = game->get_timer().count(); /* game.game_time is already in milliseconds */
+        Result::step_cnt = game->get_cnt();
+    }
+    void read_from_text(std::string result_txt /* in the same format as recorded by record_in_file() */) {
+        std::stringstream ss;
+        ss.clear();
+        ss << result_txt;
+        std::string mode_str[2];
+        ss >> mode_str[0] >> mode_str[1];
+        if (mode_str[0] == "TRIANGLE" && mode_str[1] == "IMAGE")
+            Result::mode = TRIANGLE_MODE | IMAGE_MODE;
+        else if (mode_str[0] == "SQUARE" && mode_str[1] == "IMAGE")
+            Result::mode = SQUARE_MODE | IMAGE_MODE;
+        else if (mode_str[0] == "TRIANGLE" && mode_str[1] == "HUE")
+            Result::mode = TRIANGLE_MODE | HUE_MODE;
+        else if (mode_str[0] == "SQUARE" && mode_str[1] == "HUE")
+            Result::mode = SQUARE_MODE | HUE_MODE;
+        else
+            throw std::runtime_error("Not supported.");
+        ss >> Result::option[(Result::mode & HUE_IMG_FILTER) == HUE_MODE] >> Result::N >> Result::time_ms >> Result::step_cnt;
+    }
+    short get_mode() {
+        return Result::mode;
+    }
+    short get_option() {
+        return Result::option[(Result::mode & HUE_IMG_FILTER) == HUE_MODE];
+    }
+    long long get_N() {
+        return Result::N;
+    }
+    long long get_time_ms() {
+        return Result::time_ms;
+    }
+    long long get_cnt() {
+        return Result::step_cnt;
+    }
+    void record_in_file() {
+        std::ofstream results;
+        results.open("Files\\Data\\Results.txt", std::fstream::app);
+        results << ((mode & SQR_TRI_FILTER) == TRIANGLE_MODE ? "TRIANGLE" : "SQUARE") << ' ' << ((mode & HUE_IMG_FILTER) == IMAGE_MODE ? "IMAGE" : "HUE") << ' ' << Result::option[(Result::mode & HUE_IMG_FILTER) == HUE_MODE] << ' ' << Result::N << ' ' << Result::time_ms << ' ' << Result::step_cnt << '\n';
+#ifdef TESTING
+        std::cout << "Results: " << ((mode & SQR_TRI_FILTER) == TRIANGLE_MODE ? "TRIANGLE" : "SQUARE") << ' ' << ((mode & HUE_IMG_FILTER) == IMAGE_MODE ? "IMAGE" : "HUE") << ' ' << Result::option[(Result::mode & HUE_IMG_FILTER) == HUE_MODE] << ' ' << Result::N << '  ' << Result::time_ms << ' ' << Result::step_cnt << std::endl;
+#endif
+        results.close();
+    }
+    bool match_with_game(Game* game) {
+        return Result::mode == game->get_mode() && Result::N == game->get_N() && Result::option[(Result::mode & HUE_IMG_FILTER) == HUE_MODE] == game->get_option();
+    }
+};
+
 namespace square {
     void fill_region(const ImageHuePointer imagehuepointer /* the resolution should be GRAPH_SIZE * GRAPH_SIZE if image passed */, const long long i_begin, const long long j_begin, const long long i_change, const long long j_change, const long long target_i_begin, const long long target_j_begin) {
         /** Fill the entire graph by a hue of color or an image */
@@ -377,14 +446,14 @@ namespace square {
             image_buffer = GetImageBuffer(imagehuepointer.image);
         for (long long i = i_begin; i != i_begin + i_change; ++i) {
             for (long long j = j_begin; j != j_begin + j_change; ++j) {
-                graph_buffer[i * GRAPH_SIZE + j] = imagehuepointer.image_hue? hue_BGR(imagehuepointer.hue, i - i_begin + target_i_begin, j - j_begin + target_j_begin): image_buffer[(i - i_begin + target_i_begin) * GRAPH_SIZE + (j - j_begin + target_j_begin)];
+                graph_buffer[i * GRAPH_SIZE + j] = imagehuepointer.image_hue ? hue_BGR(imagehuepointer.hue, i - i_begin + target_i_begin, j - j_begin + target_j_begin) : image_buffer[(i - i_begin + target_i_begin) * GRAPH_SIZE + (j - j_begin + target_j_begin)];
             }
         }
         /** --------------------------------------------------- */
     }
     void fill_block_target(Game* game, const ImageHuePointer imagehuepointer, long long block_i, long long block_j, long long target_block_i, long long target_block_j, bool empty) {
         Hue hue_white({ 0, 0, GRAPH_SIZE /* typically it is the upper limit */, 255, 255, 255, 0, 0, 0, 0, 0, 0 });
-        ImageHuePointer imagehuepointer_white({ 1, nullptr, &hue_white});
+        ImageHuePointer imagehuepointer_white({ 1, nullptr, &hue_white });
         fill_region(empty ? imagehuepointer_white : imagehuepointer, game->prim_sqr.begin_y + block_i * (game->prim_sqr.size / game->get_N()), game->prim_sqr.begin_x + block_j * (game->prim_sqr.size / game->get_N()), game->prim_sqr.size / game->get_N(), game->prim_sqr.size / game->get_N(), game->prim_sqr.begin_y + target_block_i * (game->prim_sqr.size / game->get_N()), game->prim_sqr.begin_x + target_block_j * (game->prim_sqr.size / game->get_N()));
     }
     void fill_block(Game* game, const ImageHuePointer imagehuepointer, long long block_i, long long block_j, bool empty) {
@@ -409,7 +478,7 @@ namespace square {
         for (long long i = 0; i != game->get_N() * game->get_N(); ++i)
             fill_block(game, imagehuepointer, i / game->get_N(), i % game->get_N(), i == game->get_empty());
     }
-    bool move_if_asked(Game *game, ExMessage &msg, const ImageHuePointer imagehuepointer, int border_line_radius) {
+    bool move_if_asked(Game* game, ExMessage& msg, const ImageHuePointer imagehuepointer, int border_line_radius) {
         if (msg.message == WM_LBUTTONUP && custom::is_in_rect(&msg, game->prim_sqr.begin_x, game->prim_sqr.begin_y, game->prim_sqr.size, game->prim_sqr.size)) {
             long long new_i = (msg.y - game->prim_sqr.begin_y) / (game->prim_sqr.size / game->get_N()), new_j = (msg.x - game->prim_sqr.begin_x) / (game->prim_sqr.size / game->get_N()), delta_i = new_i - game->get_empty() / game->get_N(), delta_j = new_j - game->get_empty() % game->get_N();
             if (delta_i * delta_i + delta_j * delta_j == 1) {
@@ -540,9 +609,18 @@ namespace triangle {
         }
 
     }
-    void fill_game_region(Game* game, const ImageHuePointer imagehuepointer, long long *pixel_status, bool assign_pixel_status, long long empty = -1 /* valid only if assign_pixel_status is false */) {
+    void fill_game_region(Game* game, const ImageHuePointer imagehuepointer, long long* pixel_status, bool assign_pixel_status, long long empty = -1 /* valid only if assign_pixel_status is false */) {
         for (long long i = 0; i != custom::raise_to_power(4, game->get_N() - 1); ++i)
-            fill_block(game, imagehuepointer, pixel_status, game->get_N(), game->get_N() - 1, i, assign_pixel_status? ASSIGN_PIXEL_STATUS: (i == empty? LEAVE_EMPTY: 0));
+            fill_block(game, imagehuepointer, pixel_status, game->get_N(), game->get_N() - 1, i, assign_pixel_status ? ASSIGN_PIXEL_STATUS : (i == empty ? LEAVE_EMPTY : 0));
+    }
+}
+
+namespace custom {
+    bool comp_time(Result A, Result B) {
+        return (A.get_time_ms() < B.get_time_ms()) || (A.get_time_ms() == B.get_time_ms() && A.get_cnt() < B.get_cnt());
+    }
+    bool comp_cnt(Result A, Result B) {
+        return (A.get_cnt() < B.get_cnt()) || (A.get_cnt() == B.get_cnt() && A.get_time_ms() < B.get_time_ms());
     }
 }
 
@@ -568,28 +646,27 @@ void play_rand_bgm() {
 *   }
 */
 
-bool get_image_with_background_blurred_and_right_size(IMAGE *img, const std::string relative_path /* input image should have the same width and height for good look */, const long long clear_region_i_begin, const long long clear_region_j_begin, const long long clear_region_size, const int blur_factor) /* the image with right size (i.e. the height and width are both GRAPH_SIZE) is loaded if the routine is runned successfully */ {
-    //TODO Check the existence of TEMP folder and check that the image has the same width and height
+bool get_image_with_background_blurred(IMAGE* img, const std::string relative_path /* input image should have the same width and height for good look */, const long long clear_region_i_begin, const long long clear_region_j_begin, const long long size, const long long clear_region_size, const int blur_factor) /* the image with height and width both equals size is loaded if the routine is runned successfully */ {
+    //TODO Check the existence of TEMP folder (the program needs it as kind of a variable storage for access) and check that the image has the same width and height
     cv::Mat image = cv::imread(relative_path, cv::IMREAD_UNCHANGED), image_resized, image_resized_blurred;
     std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
     if (image.empty() /* failed to load */)
         return false;
-    cv::resize(image, image_resized, cv::Size(GRAPH_SIZE, GRAPH_SIZE), 0, 0, cv::INTER_LINEAR);
+    cv::resize(image, image_resized, cv::Size(size, size), 0, 0, cv::INTER_LINEAR);
     if (image_resized.empty()) //TODO Learn what does it mean (why it happens)
         return false;
     cv::blur(image_resized, image_resized_blurred /* as output */, cv::Size(blur_factor, blur_factor));
     if (image_resized_blurred.empty()) //TODO Learn what does it mean
         return false;
-    cv::imwrite(("Files\\Images\\TEMP\\.jpg" + std::to_string(now.time_since_epoch().count() /* in nanoseconds */) + "_0").c_str(), image_resized);
-    cv::imwrite(("Files\\Images\\TEMP\\.jpg" + std::to_string(now.time_since_epoch().count() /* in nanoseconds */) + "_1").c_str(), image_resized_blurred);
-    //cv::waitKey(0 /* 1 is also ok, but the image will not be shown if this line is omitted */);
+    cv::imwrite(("Files\\TEMP\\" + std::to_string(now.time_since_epoch().count() /* in nanoseconds */) + "_0.jpg").c_str(), image_resized);
+    cv::imwrite(("Files\\TEMP\\" + std::to_string(now.time_since_epoch().count() /* in nanoseconds */) + "_1.jpg").c_str(), image_resized_blurred);
     IMAGE tmp_img;
-    loadimage(&tmp_img, (L"Files\\Images\\TEMP\\.jpg" + std::to_wstring(now.time_since_epoch().count() /* in nanoseconds */) + L"_0").c_str(), 1000, 1000);
-    loadimage(img, (L"Files\\Images\\TEMP\\.jpg" + std::to_wstring(now.time_since_epoch().count() /* in nanoseconds */) + L"_1").c_str(), 1000, 1000);
-    DWORD* img_buffer = GetImageBuffer(img), *tmp_img_buffer = GetImageBuffer(&tmp_img);
+    loadimage(&tmp_img, (L"Files\\TEMP\\" + std::to_wstring(now.time_since_epoch().count() /* in nanoseconds */) + L"_0.jpg").c_str(), size, size);
+    loadimage(img, (L"Files\\TEMP\\" + std::to_wstring(now.time_since_epoch().count() /* in nanoseconds */) + L"_1.jpg").c_str(), size, size);
+    DWORD* img_buffer = GetImageBuffer(img), * tmp_img_buffer = GetImageBuffer(&tmp_img);
     for (long long i = clear_region_i_begin; i != clear_region_j_begin + clear_region_size; ++i)
         for (long long j = clear_region_j_begin; j != clear_region_j_begin + clear_region_size; ++j)
-            img_buffer[i * GRAPH_SIZE + j] = tmp_img_buffer[i * GRAPH_SIZE + j];
+            img_buffer[i * size + j] = tmp_img_buffer[i * size + j];
     return true;
 }
 
@@ -718,27 +795,31 @@ void countdown_for(Game* game, short countdown /* a single digit odd number */) 
     flushmessage();
 }
 
-void show_timer(const short digits_before_decimal /* positive integer */, const long long milliseconds, bool made_red_and_bold) {
-    setlinestyle(PS_DASH, 3);
-    setfillcolor(WHITE);
-    setlinecolor(0xe2e2e2);
-    fillrectangle(712, 15, 920, 65);
+std::wstring timer_string(const short digits_before_decimal /* positive integer */, const long long milliseconds, bool indentation = true) {
     std::wstring out_str;
     long long x = milliseconds / 10000;
     for (short k = 0; k != digits_before_decimal - 1; ++k) {
         if (x)
             out_str = (wchar_t)(L'0' + x % 10) + out_str, x /= 10;
-        else
+        else if (indentation)
             out_str = L' ' + out_str;
     }
     out_str += (wchar_t)(L'0' + milliseconds / 1000 % 10);
     out_str += L".";
     out_str += (wchar_t)(L'0' + milliseconds / 100 % 10);
-    settextcolor(made_red_and_bold ? RED: 0x404040);
-    settextstyle(30, 0, L"楷体", 0, 0, made_red_and_bold? 900: 500, false, false, false);
+    return out_str;
+}
+
+void show_timer(const short digits_before_decimal /* positive integer */, const long long milliseconds, bool made_red_and_bold) {
+    setlinestyle(PS_DASH, 3);
+    setfillcolor(WHITE);
+    setlinecolor(0xe2e2e2);
+    fillrectangle(712, 15, 920, 65);
+    settextcolor(made_red_and_bold ? RED : 0x404040);
+    settextstyle(30, 0, L"楷体", 0, 0, made_red_and_bold ? 900 : 500, false, false, false);
     outtextxy(718, 23, L"时间");
-    settextstyle(30, 0, L"Consolas", 0, 0, made_red_and_bold? 900: 500, false, false, false);
-    outtextxy(782, 23, (L": " + out_str + L" s").c_str());
+    settextstyle(30, 0, L"Consolas", 0, 0, made_red_and_bold ? 900 : 500, false, false, false);
+    outtextxy(782, 23, (L": " + timer_string(digits_before_decimal, milliseconds) + L" s").c_str());
     FlushBatchDraw();
 }
 
@@ -746,16 +827,16 @@ void sound_after_game(bool failed_winned) {
 #ifndef MUTED
     PlaySoundW(NULL, 0, 0); /* stop current bgm */
 #endif
-    std::this_thread::sleep_for(std::chrono::milliseconds(failed_winned? 200: 150));
+    std::this_thread::sleep_for(std::chrono::milliseconds(failed_winned ? 200 : 150));
 #ifndef MUTED
-    PlaySoundW(failed_winned? L"Files\\Sounds\\splash.wav": L"Files\\Sounds\\gameover.wav", NULL, SND_ASYNC | SND_FILENAME); /* about 350 or 2250 milliseconds delay */
+    PlaySoundW(failed_winned ? L"Files\\Sounds\\splash.wav" : L"Files\\Sounds\\gameover.wav", NULL, SND_ASYNC | SND_FILENAME); /* about 350 or 2250 milliseconds delay */
 #endif
-    std::this_thread::sleep_for(std::chrono::milliseconds(failed_winned? 400: 2250));
+    std::this_thread::sleep_for(std::chrono::milliseconds(failed_winned ? 400 : 2250));
     play_rand_bgm(); /* play bgm */
     flushmessage();
 }
 
-void hue_sky_refresh(Hue *hue_sky, bool hue_sky_up_down) {
+void hue_sky_refresh(Hue* hue_sky, bool hue_sky_up_down) {
     hue_sky->R_top_left = hue_sky_up_down ? 127 : 80;
     hue_sky->G_top_left = hue_sky_up_down ? 223 : 192;
     hue_sky->R_total_change_i = hue_sky_up_down ? -36 : 36;
@@ -765,7 +846,7 @@ void hue_sky_refresh(Hue *hue_sky, bool hue_sky_up_down) {
 }
 
 namespace image_res {
-    IMAGE background[2], exit, pause, play, play_small, restart, sound[2], star_empty, star_filled[2];
+    IMAGE background[2], exit, pause, play, play_small, restart, sound[2], star_empty, star_filled[2], tick, cross, go;
     void load() {
         for (short i = 0; i != 2; ++i)
             loadimage(&background[i], (L"Files\\Images\\Elements\\Flower_" + std::to_wstring(i) + L".png").c_str(), 400, 400);
@@ -779,12 +860,15 @@ namespace image_res {
         loadimage(&star_empty, L"Files\\Images\\Elements\\Star_empty.png", 25, 25);
         for (short i = 0; i != 2; ++i)
             loadimage(&star_filled[i], (L"Files\\Images\\Elements\\Star_filled" + std::to_wstring(i) + L".png").c_str(), 25, 25);
+        loadimage(&tick, L"Files\\Images\\Elements\\Tick.png", 50, 50);
+        loadimage(&cross, L"Files\\Images\\Elements\\Cross.png", 50, 50);
+        loadimage(&go, L"Files\\Images\\Elements\\Go.png", 50, 50);
     }
 }
 
 int main() {
     GetCurrentDirectoryW(MAX_PATH, working_path) /* initialization */;
-#ifdef DEBUG
+#ifdef TESTING
     std::cout << "Debugging now.\n";
     initgraph(GRAPH_SIZE, GRAPH_SIZE, EX_SHOWCONSOLE | EX_NOCLOSE | EX_NOMINIMIZE);
 #else
@@ -793,8 +877,8 @@ int main() {
     play_rand_bgm();
     setbkmode(TRANSPARENT);
     image_res::load();
-    Hue hue_play({ 0, 0, 1000,  0, 0, 0 ,  0, 256, 0 ,  256, 0, 0 });
-    Hue hue_sky({ 0, 0, 1000, 0, 0, 255 ,  0, 0, 0 ,  0, 0, 0 }); /* some values are to be assigned */;
+    Hue hue_play({ 0, 0, GRAPH_SIZE,  0, 0, 0 ,  0, 256, 0 ,  256, 0, 0 });
+    Hue hue_sky({ 0, 0, GRAPH_SIZE, 0, 0, 255 ,  0, 0, 0 ,  0, 0, 0 }); /* some values are to be assigned */;
     Hue hue_white({ 0, 0, GRAPH_SIZE /* typically it is the upper limit */, 255, 255, 255, 0, 0, 0, 0, 0, 0 });
     const ImageHuePointer imagehuepointer_sky({ 1, nullptr, &hue_sky });
     graph_buffer = GetImageBuffer();
@@ -807,11 +891,12 @@ int main() {
             flushmessage();
             /* it is necessary to deal with START_PAGE and EXIT_PAGE cases first  */
             if (page == START_PAGE) {
-#ifdef DEBUG
+#ifdef TESTING
                 std::cout << "page is START_PAGE now.\n";
 #endif
                 Hue hue_play_small({ 200, 200, 100, 64, 64, 0, 0, 128, 0, 128, 0, 0 }) /* the size of the small square is GRAPH_SIZE / 10 */;
-                Game small_square_game(SQUARE_MODE, 2);
+                const ImageHuePointer imagehuepointer_play_small({ true, nullptr, &hue_play_small });
+                Game small_square_game(SQUARE_MODE, 0 /* //TODO */, 2);
                 small_square_game.set_prim_sqr(200, 200, 100);
                 small_square_game.set_sqr(true);
                 /** Shuffle the small game so that one move is required to solve it */
@@ -874,16 +959,17 @@ int main() {
                                     outtextxy(204, 308, L"(sliding block)");
                                 }
                             }
-                            const ImageHuePointer tmp_imagehuepointer({ 1, nullptr, &hue_play_small });
-                            square::fill_game_region(&small_square_game, tmp_imagehuepointer);
+                            square::fill_game_region(&small_square_game, imagehuepointer_play_small);
                             if (refresh_after_winned) {
-                                square::fill_block(&small_square_game, tmp_imagehuepointer, small_square_game.get_empty() / small_square_game.get_N(), small_square_game.get_empty() % small_square_game.get_N(), false);
+                                square::fill_block(&small_square_game, imagehuepointer_play_small, small_square_game.get_empty() / small_square_game.get_N(), small_square_game.get_empty() % small_square_game.get_N(), false);
                             }
                             square::draw_outer_border(&small_square_game, 2, true);
                             if (refresh_after_winned) {
                                 FlushBatchDraw();
                                 sound_after_game(true);
-                                page = SQUARE_MODE | HUE_MODE | GAME_PAGE;
+#ifdef TESTING
+                                page = SQUARE_MODE | IMAGE_MODE | GAME_PAGE;
+#endif
                                 break;
                             }
                             else {
@@ -903,8 +989,7 @@ int main() {
                     }
                     bool peeked = peekmessage(&msg, EX_MOUSE);
                     if (peeked) {
-                        const ImageHuePointer tmp_imagehuepointer({ 1, nullptr, &hue_play_small });
-                        if (!prepare_exit && square::move_if_asked(&small_square_game, msg, tmp_imagehuepointer, 2)) {
+                        if (!prepare_exit && square::move_if_asked(&small_square_game, msg, imagehuepointer_play_small, 2)) {
                             if (small_square_game.check_solved()) {
                                 refresh_after_winned = true /* after small game solved */, bg_refresh = true /* refresh immediately within the next loop */;
                                 continue;
@@ -936,7 +1021,7 @@ int main() {
                 continue;
             }
             else if (page == EXIT_PAGE) {
-#ifdef DEBUG
+#ifdef TESTING
                 std::cout << "page is EXIT_PAGE now.\n";
 #endif
                 Hue hue_play_small({ 200, 200, 100, 64, 64, 0, 0, 128, 0, 128, 0, 0 }) /* the size of the small square is GRAPH_SIZE / 10 */;
@@ -976,14 +1061,14 @@ int main() {
                 break /* exit */;
             }
             else if ((page & SQR_TRI_FILTER) == SQUARE_MODE && (page & PAGE_TYPE) == PAUSED_PAGE) {
-#ifdef DEBUG
+#ifdef TESTING
                 if ((page & HUE_IMG_FILTER) == IMAGE_MODE)
                     std::cout << "page is SQUARE_MODE | IMAGE_MODE | PAUSED_PAGE now.\n";
                 else
                     std::cout << "page is SQUARE_MODE | HUE_MODE | PAUSED_PAGE now.\n";
 #endif
                 /** Construct a new game for user to test while real game paused */
-                Game new_tmp_game(this_game->get_mode(), this_game->get_N());
+                Game new_tmp_game(this_game->get_mode(), this_game->get_option(), this_game->get_N());
                 new_tmp_game.set_prim_sqr(500, 500, 336);
                 new_tmp_game.set_sqr(true);
                 new_tmp_game.set_original_empty_block(this_game->get_empty(true));
@@ -996,9 +1081,31 @@ int main() {
                 std::chrono::steady_clock::time_point last_time = std::chrono::steady_clock::now(), exit_request_time, resume_request_time;
                 bool hue_sky_up_down = false, bg_refresh = true, prepare_exit = false, prepare_resume = false /* they must not be true at the same time */, ignore_mouse_hover_on_resume = true /* if not ignored at the first time, the behavior is strange when PAUSED_PAGE is entered by hovering the mouse on the pause sign in GAME_PAGE */;
                 Hue hue_play_medium(hue_play), hue_play_medium_shifted(hue_play);
-                hue_play_medium.square_size = 400, hue_play_medium.top_left_i = 48, hue_play_medium.top_left_j = 48;
-                hue_play_medium_shifted.square_size = 400, hue_play_medium_shifted.top_left_i = 468, hue_play_medium_shifted.top_left_j = 468;
-                const ImageHuePointer imagehuepointer_play_medium({ 1, nullptr, &hue_play_medium }), imagehuepointer_play_medium_shifted({ 1, nullptr, &hue_play_medium_shifted });
+                if ((page & HUE_IMG_FILTER) == HUE_MODE) {
+                    hue_play_medium.square_size = SMALL_GRAPH_SIZE, hue_play_medium.top_left_i = 48, hue_play_medium.top_left_j = 48;
+                    hue_play_medium_shifted.square_size = SMALL_GRAPH_SIZE, hue_play_medium_shifted.top_left_i = 468 /* GRAPH_SIZE / 2 - 32 */, hue_play_medium_shifted.top_left_j = 468 /* GRAPH_SIZE / 2 - 32 */;
+                }
+                IMAGE image_play, image_play_tmp, image_play_medium, image_play_medium_shifted;
+                if ((page & HUE_IMG_FILTER) == IMAGE_MODE) {
+                    const std::string image_relative_path = "Files\\Images\\Puzzle_Qiuzhen\\0.jpg"; //TODO More options for image
+                    if (!get_image_with_background_blurred(&image_play, image_relative_path, 80, 80, GRAPH_SIZE, 840, 100) || !get_image_with_background_blurred(&image_play_tmp, image_relative_path, 32, 32, SMALL_GRAPH_SIZE, 336, 100)) { //TODO Think about blur_factor
+                        throw std::runtime_error("The image is not successfully loaded."); //TODO change to some prompt in the game
+                    }
+                    get_image_with_background_blurred(&image_play_medium, image_relative_path, 80, 80, GRAPH_SIZE, 840, 100);
+                    get_image_with_background_blurred(&image_play_medium_shifted, image_relative_path, 80, 80, GRAPH_SIZE, 840, 100);
+#ifdef TESTING
+                    saveimage(L"Files\\TEMP\\Qiuzhen_0_image_play.jpg", &image_play);
+                    saveimage(L"Files\\TEMP\\Qiuzhen_0_image_play_medium.jpg", &image_play_medium);
+                    saveimage(L"Files\\TEMP\\Qiuzhen_0_image_play_medium_shifted.jpg", &image_play_medium_shifted);
+                    saveimage(L"Files\\TEMP\\Qiuzhen_0_image_play_tmp.jpg", &image_play_tmp);
+                    std::cout << "Image widths: " << image_play.getwidth() << ' ' << image_play_tmp.getwidth() << ' ' << image_play_medium.getwidth() << ' ' << image_play_medium_shifted.getwidth() << '\n';
+#endif
+                    DWORD* image_play_buffer = GetImageBuffer(&image_play), * image_play_tmp_buffer = GetImageBuffer(&image_play_tmp), * image_play_medium_buffer = GetImageBuffer(&image_play_medium), * image_play_medium_shifted_buffer = GetImageBuffer(&image_play_medium_shifted);
+                    for (long long i = 0; i != SMALL_GRAPH_SIZE; ++i)
+                        for (long long j = 0; j != SMALL_GRAPH_SIZE; ++j)
+                            image_play_medium_buffer[(i + 48) * GRAPH_SIZE + (j + 48)] = image_play_medium_shifted_buffer[(i + 468) * GRAPH_SIZE + (j + 468)] = image_play_tmp_buffer[i * SMALL_GRAPH_SIZE + j];
+                }
+                const ImageHuePointer imagehuepointer_play({ (page & HUE_IMG_FILTER) == HUE_MODE, &image_play, &hue_play }), imagehuepointer_play_medium({ (page & HUE_IMG_FILTER) == HUE_MODE, &image_play_medium, &hue_play_medium }), imagehuepointer_play_medium_shifted({ (page & HUE_IMG_FILTER) == HUE_MODE, &image_play_medium_shifted, &hue_play_medium_shifted });
                 while (true) {
                     std::chrono::steady_clock::time_point time_this_loop = std::chrono::steady_clock::now();
                     if (prepare_exit) {
@@ -1011,7 +1118,7 @@ int main() {
                     else if (prepare_resume) {
                         time_elapsed_since_resume_request = std::chrono::duration_cast<std::chrono::seconds>(time_this_loop - resume_request_time).count();
                         if (time_elapsed_since_resume_request >= countdown_before_resume) {
-                            page = SQUARE_MODE | HUE_MODE | RESUMED | GAME_PAGE;
+                            page = SQUARE_MODE | (page & HUE_IMG_FILTER) | RESUMED | GAME_PAGE;
                             break;
                         }
                     }
@@ -1020,10 +1127,9 @@ int main() {
                         square::fill_region(imagehuepointer_sky, 0, 0, GRAPH_SIZE, GRAPH_SIZE, 0, 0);
                         putimage(5, 0, &image_res::exit, SRCAND);
                         putimage(85, 15, &image_res::play, SRCAND); //LEARN Why the image will flash if put after drawing of square and right before flusing
-                        this_game->set_prim_sqr(80, 80, prepare_resume? 840: 336 /* 840 / 5 * 2 */);
+                        this_game->set_prim_sqr(80, 80, prepare_resume ? 840 : 336 /* 840 / 5 * 2 */);
                         this_game->set_sqr(false);
-                        const ImageHuePointer tmp_imagehuepointer[2] = { { 1, nullptr, &hue_play_medium }, { 1, nullptr, &hue_play } };
-                        square::fill_game_region(this_game, tmp_imagehuepointer[prepare_resume]);
+                        square::fill_game_region(this_game, prepare_resume? imagehuepointer_play: imagehuepointer_play_medium);
                         square::draw_outer_border(this_game, 3, true);
                         if (prepare_resume || prepare_exit)
                             settextcolor(RED);
@@ -1056,7 +1162,7 @@ int main() {
                             setbkmode(TRANSPARENT);
                         }
                         else if (prepare_exit) {
-#ifdef DEBUG
+#ifdef TESTING
                             line(500, 0, 500, 999);
 #endif
                             settextstyle(150, 0, L"Consolas", 0, 0, 400, false, false, false);
@@ -1065,12 +1171,12 @@ int main() {
                             outtextxy(500 - 75, 425 + 150 + 3, L"- Quitting -");
                         }
                         else {
-#ifdef DEBUG
+#ifdef TESTING
                             line(668, 0, 668, 999);
 #endif
                             /** Draw a game at the lower left corner for user to test */
                             settextstyle(40, 0, L"Candara", 0, 0, 400, false, false, false);
-                            outtextxy(668 - 75, 450, L"- Test here -");
+                            outtextxy(668 - 77, 450, L"- Test here -");
                             square::fill_game_region(&new_tmp_game, imagehuepointer_play_medium_shifted);
                             square::draw_outer_border(&new_tmp_game, 3, true);
                             settextstyle(30, 0, L"Candara", 0, 0, 300, false, false, false);
@@ -1096,7 +1202,7 @@ int main() {
                             ignore_mouse_hover_on_resume = ignore_mouse_hover_on_resume && custom::is_in_circ(&msg, 110, 38, 21) /* it is ok to continue the flow using msg possibly again */;
                         if (prepare_resume) {
                             if (msg.message == WM_KEYUP && msg.vkcode == VK_BACK || msg.message == WM_LBUTTONUP && custom::is_in_circ(&msg, 110, 38, 21)) {
-                                page = SQUARE_MODE | HUE_MODE | RESUMED | GAME_PAGE;
+                                page = SQUARE_MODE | (page & HUE_IMG_FILTER) | RESUMED | GAME_PAGE;
                                 break;
                             }
                             if (!custom::is_in_circ(&msg, 110, 38, 21)) {
@@ -1129,7 +1235,7 @@ int main() {
                 continue;
             }
             else if ((page & SQR_TRI_FILTER) == SQUARE_MODE && (page & PAGE_TYPE) == GAME_PAGE) {
-#ifdef DEBUG
+#ifdef TESTING
                 if (page & RESUMED_FILTER) {
                     if ((page & HUE_IMG_FILTER) == IMAGE_MODE)
                         std::cout << "page is SQUARE_MODE | IMAGE_MODE | GAME_PAGE | RESUMED now.\n";
@@ -1143,18 +1249,18 @@ int main() {
                         std::cout << "page is SQUARE_MODE | HUE_MODE | GAME_PAGE now.\n";
                 }
 #endif
-                IMAGE img_play;
+                IMAGE image_play;
                 if ((page & HUE_IMG_FILTER) == IMAGE_MODE) {
                     const std::string image_relative_path = "Files\\Images\\Puzzle_Qiuzhen\\0.jpg"; //TODO More options for image
-                    if (!get_image_with_background_blurred_and_right_size(&img_play, image_relative_path, 80, 80, 840, 40)) {
-                        throw std::runtime_error("The image is not successfully loaded."); //TODO Change to some prompt in the game
+                    if (!get_image_with_background_blurred(&image_play, image_relative_path, 80, 80, GRAPH_SIZE, 840, 100)) {
+                        throw std::runtime_error("The image is not successfully loaded."); //TODO change to some prompt in the game
                     }
                 }
-                const ImageHuePointer imagehuepointer_play ({ (page & HUE_IMG_FILTER) == HUE_MODE, (page & HUE_IMG_FILTER) == HUE_MODE ? nullptr : &img_play, (page & HUE_IMG_FILTER) == HUE_MODE ? &hue_play : nullptr });
+                const ImageHuePointer imagehuepointer_play({ (page & HUE_IMG_FILTER) == HUE_MODE, &image_play, &hue_play});
                 square::fill_region(imagehuepointer_play, 0, 0, GRAPH_SIZE, GRAPH_SIZE, 0, 0);
                 if (!(page & RESUMED)) {
                     /** Initialize a game */
-                    Game game(SQUARE_MODE, 9) /* this should not be cleared as long as main() is not returned, so a pointer to it is valid */; //TODO Setting change this constant, no larger than 9
+                    Game game(SQUARE_MODE | (page & HUE_IMG_FILTER), 0 /* //TODO */, 2) /* this should not be cleared as long as main() is not returned, so a pointer to it is valid */; //TODO Setting change this constant, no larger than 9
                     game.set_prim_sqr(80, 80, 840 /* will be modified by the program to be a multiple of N */) /* {80, 80, 840} is also used above when loading image */;
                     game.set_sqr(true);
                     /** Shuffle the small game so that at least one move is required to solve it */
@@ -1167,7 +1273,7 @@ int main() {
                     countdown_for(&game, 3);
                     game.reset_timer();
                     game.reset_cnt();
-                    game.set_time_limit(std::chrono::seconds(100)); //TODO Customize
+                    game.set_time_limit(std::chrono::seconds(100)); //TODO Customize, but if >= 1000 may need to adjust timerank page text output
                     /** ----------------- */
                     this_game = &game;
                 }
@@ -1194,7 +1300,7 @@ int main() {
                     else if (prepare_pause) {
                         time_elapsed_since_pause_request = std::chrono::duration_cast<std::chrono::seconds>(time_this_loop - pause_request_time).count();
                         if (time_elapsed_since_pause_request >= countdown_before_pause) {
-                            page = SQUARE_MODE | HUE_MODE | PAUSED_PAGE;
+                            page = SQUARE_MODE | (page & HUE_IMG_FILTER) | PAUSED_PAGE;
                             break;
                         }
                     }
@@ -1260,7 +1366,7 @@ int main() {
                             show_timer(3, std::chrono::duration_cast<std::chrono::milliseconds>(this_game->get_time_limit()).count(), true);
                             sound_after_game(false);
                             this_game->finalize_timer();
-                            page = SQUARE_MODE | HUE_MODE | RESULT_PAGE; /* failed */
+                            page = SQUARE_MODE | (page & HUE_IMG_FILTER) | RESULT_PAGE; /* failed */
                             break;
                         }
                     }
@@ -1274,7 +1380,7 @@ int main() {
                             ignore_mouse_hover_on_pause = ignore_mouse_hover_on_pause && custom::is_in_circ(&msg, 110, 38, 21) /* it is ok to continue the flow using msg possibly again */;
                         if (prepare_pause) {
                             if (msg.message == WM_KEYUP && msg.vkcode == VK_SPACE || msg.message == WM_LBUTTONUP && custom::is_in_circ(&msg, 110, 38, 21)) {
-                                page = SQUARE_MODE | HUE_MODE | PAUSED_PAGE;
+                                page = SQUARE_MODE | (page & HUE_IMG_FILTER) | PAUSED_PAGE;
                                 break;
                             }
                             if (!custom::is_in_circ(&msg, 110, 38, 21)) {
@@ -1316,11 +1422,258 @@ int main() {
                     }
                     if (this_game->check_solved()) {
                         sound_after_game(true);
-                        page = SQUARE_MODE | HUE_MODE | RESULT_PAGE; /* winned */
+                        this_game->increment_timer(std::chrono::duration_cast<std::chrono::milliseconds>(time_this_loop - game_begin_time));
+                        page = SQUARE_MODE | (page & HUE_IMG_FILTER) | RESULT_PAGE; /* winned */
                         break;
                     }
                 }
                 /** ------------------------------------------------- */
+                continue;
+            }
+            else if ((page & SQR_TRI_FILTER) == SQUARE_MODE && (page & PAGE_TYPE) == RESULT_PAGE) {
+#ifdef TESTING
+                if ((page & HUE_IMG_FILTER) == IMAGE_MODE)
+                    std::cout << "page is SQUARE_MODE | IMAGE_MODE | RESULT_PAGE now.\n";
+                else
+                    std::cout << "page is SQUARE_MODE | HUE_MODE | RESULT_PAGE now.\n";
+#endif
+                const long long countdown_before_exit = 3 /* a single digit number */;
+                long long time_elapsed_since_exit_request /* in seconds */;
+                std::chrono::milliseconds flash_period(current_bgm ? 255 : 170 /* a BGM specific value figured out by rough testing */);
+                std::chrono::steady_clock::time_point begin_time = std::chrono::steady_clock::now(), last_time = begin_time, exit_request_time;
+                bool hue_sky_up_down = false, bg_refresh = true, prepare_exit = false, decided_to_record = false, to_record;
+                while (true) {
+                    std::chrono::steady_clock::time_point time_this_loop = std::chrono::steady_clock::now();
+                    if (prepare_exit) {
+                        time_elapsed_since_exit_request = std::chrono::duration_cast<std::chrono::seconds>(time_this_loop - exit_request_time).count();
+                        if (time_elapsed_since_exit_request >= countdown_before_exit) {
+                            page = START_PAGE;
+                            break;
+                        }
+                    }
+                    if (bg_refresh) {
+                        /** One refresh cycle */
+                        hue_sky_refresh(&hue_sky, hue_sky_up_down);
+                        square::fill_region(imagehuepointer_sky, 0, 0, GRAPH_SIZE, GRAPH_SIZE, 0, 0);
+                        for (short i = 0; i != 2; ++i)
+                            putimage(600, 0, &image_res::background[i], i ? SRCPAINT : SRCAND) /* successful but picture jagged */;
+                        putimage(5, 0, &image_res::exit, SRCAND);
+                        setlinestyle(PS_DASH, 20);
+                        setlinecolor(BLACK);
+                        circle(500, 500, 180);
+                        if (prepare_exit) {
+                            settextcolor(RED);
+                            settextstyle(150, 0, L"Consolas", 0, 0, 400, false, false, false);
+                            outtextxy(500 - custom::consolas_width(150) / 2, 425, std::to_wstring(countdown_before_exit - time_elapsed_since_exit_request /* a single digit */).c_str());
+                            //TODO exit.png下面弄退出的文字提示; 或者3 2 1的底下“Exit?”
+                            FlushBatchDraw();
+                        }
+                        else {
+                            if (this_game->check_solved()) {
+                                setlinestyle(PS_DASH, 3);
+                                setlinecolor(WHITE);
+                                setfillcolor(0xe2e2e2);
+                                setbkcolor(0xe2e2e2);
+                                settextcolor(BLACK);
+                                fillrectangle(70, 70, 710, 182) /* I have tested that the box must be wide enough to contain the text below */;
+                                settextstyle(40, 0, L"Candara", 0, 0, 300, false, false, false);
+                                outtextxy(80, 75, (L"You have used " + timer_string(3, this_game->get_timer().count(), false) /* the length of the string is constrained by the number of digits of this_game->get_time_limit() */ + L" s and " + std::wstring(this_game->get_cnt() <= 99999 ? std::to_wstring(this_game->get_cnt()).c_str() : L"99999+") + (this_game->get_cnt() >= 2 ? L" steps." : L" step.")).c_str());
+                                if (!decided_to_record) {
+                                    outtextxy(80, 125, L"Make a record?");
+                                    putimage(305, 120, &image_res::tick, SRCAND);
+                                    putimage(375, 120, &image_res::cross, SRCAND);
+                                }
+                                else {
+                                    outtextxy(80, 125, to_record ? L"Go to the Hall of Fame with your result?" : L"Go to the Hall of Fame?");
+                                    putimage(to_record ? 645 : 415, 120, &image_res::go, SRCAND);
+                                }
+                            }
+                            settextstyle(100, 0, L"仿宋", 0, 0, 300, false, false, false);
+                            settextcolor(WHITE);
+                            outtextxy(515, 385, this_game->check_solved() ? L"胜" : L"败");
+                            outtextxy(385, 515, this_game->check_solved() ? L"利" : L"失");
+                            setlinestyle(PS_DASH, 5);
+                            line(385, 500, 614, 500);
+                            line(500, 385, 500, 614);
+                            FlushBatchDraw();
+                        }
+                        /* ------------------ */
+                        hue_sky_up_down = !hue_sky_up_down, bg_refresh = false;
+                    }
+                    else if (!bg_refresh) {
+                        if (std::chrono::duration_cast<std::chrono::milliseconds>(time_this_loop - last_time) >= flash_period)
+                            last_time = time_this_loop, bg_refresh = true;
+                    }
+                    bool peeked = peekmessage(&msg, EX_MOUSE);
+                    if (peeked) {
+                        if (!prepare_exit && custom::is_in_rect(&msg, 23, 24, 27, 32)) {
+                            prepare_exit = true, exit_request_time = time_this_loop, bg_refresh = true /* refresh immediately within the next loop */; //TODO Other blocks sometimes also need to refresh immediately
+                            continue;
+                        }
+                        if (prepare_exit && !custom::is_in_rect(&msg, 23, 24, 27, 32)) {
+                            prepare_exit = false, bg_refresh = true /* refresh immediately within the next loop */;
+                            continue;
+                        }
+                        if (msg.message == WM_LBUTTONUP && custom::is_in_rect(&msg, 23, 24, 27, 32)) {
+                            page = START_PAGE;
+                            break;
+                        }
+                        if (!prepare_exit && msg.message == WM_LBUTTONUP) {
+                            if (!decided_to_record) {
+                                if (custom::is_in_circ(&msg, 330, 143, 21)) {
+                                    decided_to_record = true, to_record = true, bg_refresh = true /* refresh immediately within the next loop */;
+                                    Result result(this_game);
+                                    result.record_in_file();
+                                    continue;
+                                }
+                                if (custom::is_in_circ(&msg, 400, 143, 21)) {
+                                    decided_to_record = true, to_record = false, bg_refresh = true /* refresh immediately within the next loop */;
+                                    continue;
+                                }
+                            }
+                            else {
+                                if (custom::is_in_circ(&msg, to_record ? 670 : 440, 143, 21)) {
+                                    page = SQUARE_MODE | (page & HUE_IMG_FILTER) | RANK_PAGE;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
+            else if ((page & SQR_TRI_FILTER) == SQUARE_MODE && (page & PAGE_TYPE) == RANK_PAGE) {
+#ifdef TESTING
+                if ((page & HUE_IMG_FILTER) == IMAGE_MODE)
+                    std::cout << "page is SQUARE_MODE | IMAGE_MODE | RANK_PAGE now.\n";
+                else
+                    std::cout << "page is SQUARE_MODE | HUE_MODE | RANK_PAGE now.\n";
+#endif
+                /** Read results from text and put in array with indices 0, ..., cnt - 1 (cnt is at most RANK_DISPLAY_MAX) */
+                long long cnt_tmp = 0, cnt = 0;
+                std::ifstream results_test, results;
+                std::string tmp_str;
+                results_test.open("Files\\Data\\Results.txt", std::fstream::in);
+                while (std::getline(results, tmp_str)) // TODO Better condition?
+                    cnt_tmp++;
+                results_test.close();
+                Result* results_list = new Result[cnt_tmp];
+                results.open("Files\\Data\\Results.txt", std::fstream::in);
+                while (std::getline(results, tmp_str)) {
+                    results_list[cnt].read_from_text(tmp_str);
+                    if (results_list[cnt].match_with_game(this_game))
+                        cnt++ /* recognize this line of result */;
+                    if (cnt == RANK_DISPLAY_MAX)
+                        break;
+                }
+#ifdef TESTING
+                std::cout << "cnt_tmp is " << cnt_tmp << " and cnt is " << cnt << std::endl;
+#endif
+                /* ------------------------------------------------------------------------------------------------------- */
+                results.close();
+                const long long countdown_before_exit = 3 /* a single digit number */;
+                long long time_elapsed_since_exit_request /* in seconds */;
+                std::chrono::milliseconds flash_period(current_bgm ? 255 : 170 /* a BGM specific value figured out by rough testing */);
+                std::chrono::steady_clock::time_point begin_time = std::chrono::steady_clock::now(), last_time = begin_time, exit_request_time;
+                bool hue_sky_up_down = false, bg_refresh = true, prepare_exit = false;
+                while (true) {
+                    std::chrono::steady_clock::time_point time_this_loop = std::chrono::steady_clock::now();
+                    if (prepare_exit) {
+                        time_elapsed_since_exit_request = std::chrono::duration_cast<std::chrono::seconds>(time_this_loop - exit_request_time).count();
+                        if (time_elapsed_since_exit_request >= countdown_before_exit) {
+                            page = START_PAGE;
+                            break;
+                        }
+                    }
+                    if (bg_refresh) {
+                        /** One refresh cycle */
+                        hue_sky_refresh(&hue_sky, hue_sky_up_down);
+                        square::fill_region(imagehuepointer_sky, 0, 0, GRAPH_SIZE, GRAPH_SIZE, 0, 0);
+                        for (short i = 0; i != 2; ++i)
+                            putimage(600, 0, &image_res::background[i], i ? SRCPAINT : SRCAND) /* successful but picture jagged */;
+                        putimage(5, 0, &image_res::exit, SRCAND);
+                        if (prepare_exit) {
+                            setlinestyle(PS_DASH, 20);
+                            setlinecolor(BLACK);
+                            circle(500, 500, 180);
+                            settextcolor(RED);
+                            settextstyle(150, 0, L"Consolas", 0, 0, 400, false, false, false);
+                            outtextxy(500 - custom::consolas_width(150) / 2, 425, std::to_wstring(countdown_before_exit - time_elapsed_since_exit_request /* a single digit */).c_str());
+                            //TODO exit.png下面弄退出的文字提示; 或者3 2 1的底下“Exit?”
+                            FlushBatchDraw();
+                        }
+                        else {
+                            /** Showing the table of results */
+                            setlinestyle(PS_DASH, 3);
+                            setlinecolor(WHITE);
+                            setfillcolor(0xe2e2e2);
+                            settextcolor(BLACK);
+                            fillrectangle(70, 70, 627, 627);
+                            settextstyle(40, 0, L"Consolas", 0, 0, 400, false, false, false);
+                            outtextxy(128, 84, L"Rank");
+                            outtextxy(287, 84, L"Time");
+                            outtextxy(470, 84, L"Steps");
+                            //TODO Support sorting by number of steps
+                            if (cnt) {
+                                std::sort(results_list, results_list + cnt, custom::comp_time);
+                                for (short k = 1; k <= cnt; ++k) {
+                                    outtextxy(155, 84 + 68 * k, L'0' + k);
+                                    outtextxy(287, 84 + 68 * k, (timer_string(3, results_list[k - 1].get_time_ms(), true) + L" s").c_str());
+                                    outtextxy(470, 84 + 68 * k, std::wstring(results_list[k - 1].get_cnt() <= 99999? std::to_wstring(results_list[k - 1].get_cnt()): L"99999+").c_str());
+                                }
+                            }
+                            else {
+                                outtextxy(155, 84 + 68, L'X');
+                            }
+                            setlinestyle(PS_DASH, 3);
+                            line(70, 138, 627, 138) /* horizontal */;
+                            line(250, 70, 250, 627) /* vertical */;
+                            line(450, 70, 450, 627) /* vertical */;
+                            /* ----------------------------- */
+                            /** Show the button for clearing results */
+                            setlinestyle(PS_SOLID, 2);
+                            setlinecolor(WHITE);
+                            setfillcolor(0xe2e2e2);
+                            settextcolor(BLACK);
+                            fillrectangle(250, 650, 449, 717);
+                            settextstyle(40, 0, L"仿宋", 0, 0, 300, false, false, false);
+                            outtextxy(342, 662, L"清空");
+                            /* ------------------------------------- */
+                            settextstyle(100, 0, L"仿宋", 0, 0, 300, false, false, false);
+                            settextcolor(WHITE);
+                            const long long tmp_displacement = 135;
+                            outtextxy(515 + tmp_displacement, 385 + tmp_displacement, L"榜");
+                            outtextxy(515 + tmp_displacement,  515 + tmp_displacement, L"行");
+                            outtextxy(385 + tmp_displacement, 515 + tmp_displacement, L"排");
+                            setlinestyle(PS_DASH, 5);
+                            line(385 + tmp_displacement, 500 + tmp_displacement, 614 + tmp_displacement, 500 + tmp_displacement);
+                            line(500 + tmp_displacement, 385 + tmp_displacement, 500 + tmp_displacement, 614 + tmp_displacement);
+                            FlushBatchDraw();
+                        }
+                        /* ------------------ */
+                        hue_sky_up_down = !hue_sky_up_down, bg_refresh = false;
+                    }
+                    else if (!bg_refresh) {
+                        if (std::chrono::duration_cast<std::chrono::milliseconds>(time_this_loop - last_time) >= flash_period)
+                            last_time = time_this_loop, bg_refresh = true;
+                    }
+                    bool peeked = peekmessage(&msg, EX_MOUSE);
+                    if (peeked) {
+                        std::cout << msg.x << ' ' << msg.y << std::endl;
+                        if (!prepare_exit && custom::is_in_rect(&msg, 23, 24, 27, 32)) {
+                            prepare_exit = true, exit_request_time = time_this_loop, bg_refresh = true /* refresh immediately within the next loop */; //TODO Other blocks sometimes also need to refresh immediately
+                            continue;
+                        }
+                        if (prepare_exit && !custom::is_in_rect(&msg, 23, 24, 27, 32)) {
+                            prepare_exit = false, bg_refresh = true /* refresh immediately within the next loop */;
+                            continue;
+                        }
+                        if (msg.message == WM_LBUTTONUP && custom::is_in_rect(&msg, 23, 24, 27, 32)) {
+                            page = START_PAGE;
+                            break;
+                        }
+                    }
+                }
                 continue;
             }
         }
