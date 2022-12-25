@@ -996,9 +996,7 @@ int main() {
                             if (refresh_after_winned) {
                                 FlushBatchDraw();
                                 sound_after_game(true);
-#ifdef TESTING
                                 page = SQUARE_MODE | (which_small_game_winned? IMAGE_MODE : HUE_MODE) | GAME_PAGE;
-#endif
                                 break;
                             }
                             else {
